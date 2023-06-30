@@ -3,6 +3,7 @@ import * as faker from 'faker';
 describe('User Registration', () => {
   let user;
   let accessToken;
+  
   before(() => {
     user = {
       email: faker.internet.email(),
@@ -14,39 +15,53 @@ describe('User Registration', () => {
     cy.request('POST', '/register', user).then((response) => {
       expect(response.status).to.equal(201);
       expect(response.body).to.have.property('accessToken');
-      accessToken = response.body.accessToken;
-      const data = JSON.stringify({ accessToken, user });
-
-      cy.writeFile('RegisteredUsers.json', data);
+      accessToken = response.body.accessToken; 
+      cy.writeFile('cypress/fixtures/Token.json', {token: accessToken});
       cy.log(user);
     });
-});
+  });
 
-
+ 
   it('Get all posts', () => {
-    cy.log(`all posts`);
+    cy.log('all posts');
   
-    cy.request('GET', `/posts`).then(response => {
+    cy.request('GET', '/posts').then((response) => {
+      expect(response.status).to.equal(200);
+      expect(response.headers['content-type']).to.include('application/json');
+    });
+  });
+
+  it('Get first 10 posts', () => {
+    cy.readFile('db.json').then(db => {
+      const first10Posts = db.posts.slice(0, 10);
+  
+      cy.request('GET', '/posts?limit=10').then(response => {
+        expect(response.status).to.be.equal(200);
+        expect(response.body).to.include.deep.members(first10Posts);
+      });
+    });
+  });
+
+  it('Get post #55 and #60', () => {
+    const expectedIds = [55, 60];
+  
+    cy.request('GET', `/posts?id=55&id=60`).then(response => {
       expect(response.status).to.be.equal(200);
-      cy.log(response.body);
+  
+      const returnedPosts = response.body;
+      const returnedIds = returnedPosts.map(post => post.id);
+  
+      if (returnedIds.length > 0) {
+        expectedIds.forEach(id => {
+          expect(returnedIds).to.include(id);
+        });
+      } else {
+        cy.log('No posts with the required ids were found.');
+      }
     });
   });
 
 
-   it('Get firtst 10 posts', () => {
-      cy.request('GET', `/posts?limit=10`).then(response => {
-      expect(response.status).to.be.equal(200);
-      cy.log(response.body);
-    });
-  });
-
-
-   it('Get post # 50 and 60 ', () => {
-      cy.request('GET', `/posts?id=50&id=60`).then(response => {
-      expect(response.status).to.be.equal(200);
-      cy.log(response.body);
-    });
-  });
 
 
   it('Create a new post with code 401', () => {
@@ -62,15 +77,12 @@ describe('User Registration', () => {
       failOnStatusCode: false
     }).then((response) => {
       expect(response.status).to.equal(401);
-      cy.log(response.status);
-    });
+     });
   });
-
-
+  
 it('Create a new post with access token in header', () => {
-  cy.readFile('RegisteredUsers.json').then((fileContents) => {
-    const registeredUser = fileContents;
-    accessToken = registeredUser.accessToken;
+  cy.readFile('cypress/fixtures/Token.json').then((fileContents) => {
+    const {token} = fileContents;
 
     let post = {
       id: faker.random.number(),
@@ -82,21 +94,27 @@ it('Create a new post with access token in header', () => {
       method: 'POST',
       url: '/664/posts',
       headers: {
-        Authorization: `Bearer ${accessToken}`
+        Authorization: `Bearer ${token}`
       },
       body: post
     }).then((response) => {
       expect(response.status).to.equal(201);
-      cy.log(response.status,{accessToken}); 
+      cy.log(response.status, {token});
+
+      cy.request(`/posts/${post.id}`).then((getResponse) => {
+        expect(getResponse.status).to.equal(200);
+        cy.get(getResponse.body);
+        cy.log('Post is created:', getResponse.body );
+      });
     });
+  });
 });
-});
+
 
 
 it('Create a new post entity', () => {
-  cy.readFile('RegisteredUsers.json').then((fileContents) => {
-    const registeredUser = fileContents;
-    accessToken = registeredUser.accessToken;
+  cy.readFile('cypress/fixtures/Token.json').then((fileContents) => {
+    const {token} = fileContents;
     cy.request('GET', '/posts').then((response) => {
     expect(response.status).to.equal(200);
 
@@ -108,14 +126,13 @@ it('Create a new post entity', () => {
           method: 'PUT',
           url: `/posts/${post.id}`,
           headers: {
-            Authorization: `Bearer ${accessToken}`
+            Authorization: `Bearer ${token}`
           },
           body: post
         }).then((response) => {
           expect(response.body).to.have.property('postDate');
           expect(response.status).to.equal(200);
-          cy.log(response.body); 
-
+        
 });
 });
 });
@@ -123,13 +140,12 @@ it('Create a new post entity', () => {
 });
 
 
-
-it('Update all mistakes in posts if mistake entity exists', () => {
+it('Update all "mistakes" in posts if "mistake" entity exists', () => {
   cy.request('GET', '/posts').then((response) => {
     const posts = response.body;
 
-    cy.wrap(posts).each((post) => {
-      if (post.hasOwnProperty('mistake')) {
+        cy.wrap(posts).each((post) => {  
+        if (post.hasOwnProperty('mistake')) {
         post.mistake = 'Mistake exists';
 
         cy.request({
@@ -142,7 +158,7 @@ it('Update all mistakes in posts if mistake entity exists', () => {
             expect(response.status).to.equal(200);
           } else {
             expect(response.status).to.equal(404);
-            cy.log(response.status);
+            cy.log('failed with code 404');
           }
         });
       }
@@ -151,31 +167,29 @@ it('Update all mistakes in posts if mistake entity exists', () => {
 });
 
 
-it('Create a new post entity and update it', () => {
-  cy.readFile('RegisteredUsers.json').then((fileContents) => {
-    const registeredUser = fileContents;
-    accessToken = registeredUser.accessToken;
 
+it('Create a new post entity and update it', () => {
+  cy.readFile('cypress/fixtures/Token.json').then((fileContents) => {
+    const {token}  = fileContents;
     cy.request('GET', '/posts').then((response) => {
       expect(response.status).to.equal(200);
 
       const posts = response.body;
 
       posts.forEach((post) => {
-          nameforbook: faker.lorem.words()
+          post.nameforbook = faker.lorem.words();
         
-
-        cy.request({
+          cy.request({
           method: 'PUT',
           url: `/posts/${post.id}`,
           headers: {
-            Authorization: `Bearer ${accessToken}`
+            Authorization: `Bearer ${token}`
           },
           body: post
         }).then((response) => {
           expect(response.body.nameforbook).to.equal(post.nameforbook);
           expect(response.status).to.equal(200);
-          cy.log(response.body); 
+         
         });
       });
     });
@@ -185,9 +199,8 @@ it('Create a new post entity and update it', () => {
 
 
 it('Delete not existing entity', () => {
-  cy.readFile('RegisteredUsers.json').then((fileContents) => {
-    const registeredUser = fileContents;
-    const accessToken = registeredUser.accessToken;
+  cy.readFile('cypress/fixtures/Token.json').then((fileContents) => {
+    const {token}  = fileContents;
 
     cy.request('GET', '/posts').then((response) => {
       expect(response.status).to.equal(200);
@@ -197,7 +210,7 @@ it('Delete not existing entity', () => {
         method: 'DELETE',
         url: '/posts',
         headers: {
-          Authorization: `Bearer ${accessToken}`
+          Authorization: `Bearer ${token}`
         },
         body: { missingEntity: 'Non-existent entity' },
         failOnStatusCode: false
@@ -215,13 +228,10 @@ it('Delete not existing entity', () => {
 });
 
 
-
 it('Create a new post entity and update it, and then delete', () => {
-  cy.readFile('RegisteredUsers.json').then((fileContents) => {
-    const registeredUser = fileContents;
-    const accessToken = registeredUser.accessToken;
-
-    cy.request('GET', '/posts').then((response) => {
+  cy.readFile('cypress/fixtures/Token.json').then((fileContents) => {
+    const token = fileContents;
+      cy.request('GET', '/posts').then((response) => {
       expect(response.status).to.equal(200);
 
       const posts = response.body;
@@ -235,7 +245,7 @@ it('Create a new post entity and update it, and then delete', () => {
           method: 'PUT',
           url: `/posts/${post.id}`,
           headers: {
-            Authorization: `Bearer ${accessToken}`
+            Authorization: `Bearer ${token}`
           },
           body: post
         }).then((response) => {
@@ -250,7 +260,7 @@ it('Create a new post entity and update it, and then delete', () => {
             method: 'PUT',
             url: `/posts/${post.id}`,
             headers: {
-              Authorization: `Bearer ${accessToken}`
+              Authorization: `Bearer ${token}`
             },
             body: post
           }).then((response) => {
@@ -273,6 +283,3 @@ it('Create a new post entity and update it, and then delete', () => {
   });
 });
 });
-
-
-
